@@ -20,17 +20,23 @@ const TEN        = 10.0;
 const ELEVEN     = 11.0;
 const TWELVE     = 12.0;
 const SIXTEEN    = 16.0;
+const THIRTY     = 30.0;
 const THIRTY_TWO = 32.0;
 const HUNDRED    = 100.0;
 const THOUSAND   = 1000.0;
 
 const HALF            = ONE / TWO;
 const THIRD           = ONE / THREE;
+const TWO_THIRDS      = THIRD * TWO;
 const QUARTER         = ONE / FOUR;
+const THREE_QUARTER   = QUARTER * THREE;
+const FIFTH           = ONE / FIVE;
 const SIXTH           = ONE / SIX;
+const SEVENTH         = ONE / SEVEN;
 const EIGHTH          = ONE / EIGHT;
 const TWELFTH         = ONE / TWELVE;
 const SIXTEENTH       = ONE / SIXTEEN;
+const ONE_THIRTIETH   = ONE / THIRTY;
 const THIRTY_SECONDTH = ONE / THIRTY_TWO;
 
 const TENTH              = 1e-1;
@@ -48,7 +54,9 @@ const HUNDRED_BILLIONTH  = 1e-11;
 const HALF_PI             = PI * HALF;
 const THIRD_PI            = PI * THIRD;
 const QUARTER_PI          = PI * QUARTER;
+const FIFTH_PI            = PI * FIFTH;
 const SIXTH_PI            = PI * SIXTH;
+const SEVENTH_PI          = PI * SEVENTH;
 const EIGHTH_PI           = PI * EIGHTH;
 const TWELFTH_PI          = PI * TWELFTH;
 const SIXTEENTH_PI        = PI * SIXTEENTH;
@@ -58,6 +66,8 @@ const TWO_TAU             = TAU * TWO;
 const HALF_TAU            = PI;
 const THIRD_TAU           = TAU * THIRD;
 const QUARTER_TAU         = HALF_PI;
+const FIFTH_TAU           = TAU * FIFTH;
+const SIXTH_TAU           = THIRD_PI * TWO;
 const EIGHTH_TAU          = QUARTER_PI;
 const TWELFTH_TAU         = SIXTH_PI;
 const SIXTEENTH_TAU       = EIGHTH_PI;
@@ -65,9 +75,12 @@ const THIRTY_SECONDTH_TAU = SIXTEENTH_PI;
 
 let _defaulCanvasOptions = {
 		autoClear: false,
+		autoCompensate: false,
 		autoPushPop: false,
 		centered: false,
-		canvas: true
+		canvas: true,
+		width: null,
+		height: null
 	};
 let _canvasOptions = {};
 let canvas = document.getElementById('canvas');
@@ -78,9 +91,36 @@ if(canvas === null) {
 }
 let ctx = canvas.getContext('2d');
 let _anim, _lastCanvasTime, canvasFrameRate, frameCount, width, height, width_half, height_half;
+let _canvasCurrentlyCentered = false;
+let mouseIn = false, mouseDown = false, mousePos = null;
 
+function updateMouse(e) { // Modified from p5.js
+	if(e && !e.clientX) {
+		e = e.touches ? e.touches[0] : (e.changedTouches ? e.changedTouches[0] : e);
+	}
+	let rect = canvas.getBoundingClientRect();
+	let sx   = canvas.scrollWidth / width;
+	let sy   = canvas.scrollHeight / height;
+	let x = (e.clientX - rect.left) / sx;
+	let y = (e.clientY - rect.top) / sy;
+	if(x < 0) x = 0;
+	else if(x > width) x = width;
+	if(y < 0) y = 0;
+	else if(y > height) y = height;
+	if(mousePos) {
+		mousePos.set(x, y);
+	}
+	// return { x, y, winX: e.clientX, winY: e.clientY, id: e.identifier };
+}
+
+canvas.addEventListener('mouseenter', e => (updateMouse(e), mouseIn = true));
+canvas.addEventListener('mouseleave', e => (updateMouse(e), mouseIn = false, mouseDown = false));
+canvas.addEventListener('mousemove',  e => (updateMouse(e), mouseIn = true));
+canvas.addEventListener('mousedown',  e => (updateMouse(e), mouseIn = true, mouseDown = true));
+canvas.addEventListener('mouseup',    e => (updateMouse(e), mouseDown = false));
 window.addEventListener('resize', _resizeCanvas);
 window.addEventListener('load', () => {
+	mousePos = createVector();
 	Object.assign(
 		_canvasOptions,
 		_defaulCanvasOptions,
@@ -101,37 +141,34 @@ function _draw(timestamp) {
 	frameCount++;
 	canvasFrameRate = 1000.0 / (timestamp - _lastCanvasTime);
 	_lastCanvasTime = timestamp;
-	if(_canvasOptions.autoClear) {
-		clear(null);
-	}
+	_canvasOptions.autoClear && clear(null);
 	if(_canvasOptions.autoPushPop) {
 		push();
-		if(_canvasOptions.centered) {
-			translateCenter();
-		}
+		_canvasOptions.centered && (_canvasCurrentlyCentered = true) && translateCenter();
+		_canvasOptions.autoCompensate && compensateCanvas();
 	}
-	
 	'draw' in window && window.draw(timestamp);
-	
-	if(_canvasOptions.autoPushPop) {
-		pop();
-	}
-	
+	_canvasOptions.autoPushPop && pop();
+	_canvasCurrentlyCentered = false;
 	_anim = requestAnimationFrame(_draw);
 }
 
 function _resizeCanvas() {
-	width_half = (width = canvas.width = window.innerWidth) * HALF;
-	height_half = (height = canvas.height = window.innerHeight) * HALF;
+	// if(_canvasOptions.width === null)
+	width_half = (width = canvas.width = _canvasOptions.width !== null ? _canvasOptions.width : window.innerWidth) * HALF;
+	height_half = (height = canvas.height = _canvasOptions.height !== null ? _canvasOptions.height : window.innerHeight) * HALF;
 	ctx.fillStyle = 'hsl(0, 0%, 100%)';
 	ctx.strokeStyle = 'hsl(0, 0%, 100%)';
+	if('onResize' in window) {
+		window.onResize();
+	}
 }
 
 function clear(x, y, w, h) {
 	if(x !== undefined && typeof x === 'number') {
 		ctx.clearRect(x, y, w, h);
 	}
-	else if(_canvasOptions.centered && x !== null) {
+	else if(_canvasOptions.centered && _canvasCurrentlyCentered/*  && x !== null */) {
 		ctx.clearRect(-width_half, -height_half, width, height);
 	}
 	else {
@@ -142,9 +179,9 @@ function clear(x, y, w, h) {
 function background(a, b, c) {
 	push();
 	if(typeof a !== 'number') {
-		fill(a);
+		fillStyle(a);
 	}
-	if(_canvasOptions.centered) {
+	if(_canvasOptions.centered && _canvasCurrentlyCentered) {
 		ctx.fillRect(-width_half, -height_half, width, height);
 	}
 	else {
@@ -153,7 +190,7 @@ function background(a, b, c) {
 	pop();
 }
 
-function fill(...args) {
+function fillStyle(...args) {
 	if(args.length === 1) {
 		let a = args[0];
 		if(typeof a === 'string' || a instanceof CanvasGradient || a instanceof CanvasPattern) {
@@ -165,7 +202,7 @@ function fill(...args) {
 	}
 }
 
-function stroke(...args) {
+function strokeStyle(...args) {
 	if(args.length === 1) {
 		let a = args[0];
 		if(typeof a === 'string' || a instanceof CanvasGradient) {
@@ -177,11 +214,11 @@ function stroke(...args) {
 	}
 }
 
-function fillPath() {
+function fill() {
 	ctx.fill();
 }
 
-function strokePath() {
+function stroke() {
 	ctx.stroke();
 }
 
@@ -194,11 +231,17 @@ function pop() {
 }
 
 function translate(...args) {
-	ctx.translate(...args);
+	let [ x ] = args;
+	if(x instanceof Vector) {
+		ctx.translate(x.x, x.y);
+	}
+	else {
+		ctx.translate(...args);
+	}
 }
 
 function translateCenter() {
-	translate(width_half, height_half);
+	ctx.translate(width_half, height_half);
 }
 
 function rotate(rot) {
@@ -209,16 +252,36 @@ function scale(x = 1, y = x) {
 	ctx.scale(x, y);
 }
 
+function compensateCanvas() {
+	let offX = 0;
+	let offY = 0;
+	if(width % 2) offX += 0.5;
+	if(height % 2) offY += 0.5;
+	if(offX || offY) {
+		translate(offX, offY);
+	}
+}
+
 function beginPath() {
 	ctx.beginPath();
 }
 
 function moveTo(x, y) {
-	ctx.moveTo(x, y);
+	if(typeof x === 'number') {
+		ctx.moveTo(x, y);
+	}
+	else if('x' in x) {
+		ctx.moveTo(x.x, x.y);
+	}
 }
 
 function lineTo(x, y) {
-	ctx.lineTo(x, y);
+	if(typeof x === 'number') {
+		ctx.lineTo(x, y);
+	}
+	else if('x' in x) {
+		ctx.lineTo(x.x, x.y);
+	}
 }
 
 function closePath() {
@@ -226,59 +289,63 @@ function closePath() {
 }
 
 function point(x = 0, y = 0, r = 0, g = 0, b = 0, a = 255, doPut_ = true) {
-	let imgData = ctx.createImageData(1, 1);
-	imgData.data[0] = r;
-	imgData.data[1] = g;
-	imgData.data[2] = b;
-	imgData.data[3] = a;
-	if(doPut_) {
-		ctx.putImageData(imgData, x, y);
-	}
-	return imgData;
+	// let imgData = ctx.createImageData(1, 1);
+	// imgData.data[0] = r;
+	// imgData.data[1] = g;
+	// imgData.data[2] = b;
+	// imgData.data[3] = a;
+	// if(doPut_) {
+	// 	ctx.putImageData(imgData, x, y);
+	// }
+	// return imgData;
 }
 
-function line(x, y, x_, y_, doDraw_ = true) {
-	if(doDraw_) {
-		ctx.beginPath();
-		line(x, y, x_, y_, false);
-		ctx.stroke();
-		return;
-	}
+function line(x = 0, y = 0, x_ = 0, y_ = 0) {
 	ctx.moveTo(x, y);
 	ctx.lineTo(x_, y_);
 }
 
-function rect(x = 0, y = 0, w = 10, h = w, doDraw_ = true) {
-	if(doDraw_) {
-		ctx.beginPath();
-		rect(x, y, w, h, false);
-		ctx.stroke();
-		return;
+function vertices(...verts) {
+	if(verts.length === 0) return;
+	else if(verts.length === 1 && Array.isArray(verts[0])) {
+		verts = verts[0];
 	}
-	ctx.rect(x, y, w, h);
+	for(let i = 0; i < verts.length; i++) {
+		let n = verts[i];
+		let x = 0;
+		let y = 0;
+		if(Array.isArray(n)) {
+			([ x, y ] = n);
+		}
+		else if(n instanceof Vector || ('x' in n && 'y' in n)) {
+			({ x, y } = n);
+		}
+		lineTo(x, y);
+	}
 }
 
-function circle(x = 0, y = 0, r = 50, doDraw_ = true) {
-	if(doDraw_) {
-		ctx.beginPath();
-		circle(x, y, r, false);
-		ctx.stroke();
-		return;
-	}
-	ctx.arc(x, y, r, 0, TAU);
+function rect(x = 0, y = 0, w = 10, h = w) {
+	ctx.rect(x, y, w, h);
 }
 
 function arc(...args) {
 	ctx.arc(...args);
 }
 
-function regularPolygon(sides, radius = 50, rotation = 0, doDraw_ = true) {
-	if(doDraw_) {
-		ctx.beginPath();
-		regularPolygon(sides, radius, rotation, false);
-		ctx.stroke();
-		return;
+function circle(x = 0, y = undefined, r = 50) {
+	if(typeof x !== 'number' && 'x' in x) {
+		r = y === undefined ? r : y;
+		y = x.y;
+		x = x.x;
 	}
+	else if(y === undefined) {
+		y = 0;
+	}
+	ctx.moveTo(x + r, y);
+	ctx.arc(x, y, r, 0, TAU);
+}
+
+function regularPolygon(sides, radius = 50, rotation = 0) {
 	let circumference = TAU * radius;
 	let count = min(sides, circumference);
 	for(let i = 0; i < count; i++) {
@@ -295,8 +362,68 @@ function regularPolygon(sides, radius = 50, rotation = 0, doDraw_ = true) {
 	ctx.closePath();
 }
 
+function genRegularPolygon(sides = 3, radius = 50, rotation = 0) {
+	let iSizes = 1 / sides * TAU;
+	let data = {
+			sides,
+			radius,
+			rotation,
+			points: []
+		};
+	for(let i = 0; i < sides; i++) {
+		let t = i * iSizes + rotation;
+		let x = cos(t) * radius;
+		let y = sin(t) * radius;
+		let point = createVector(x, y);
+		Object.assign(point, { i, t });
+		data.points.push(point);
+	}
+	return data;
+}
+
+function loadImage(url) {
+	return new Promise((resolve, reject) => {
+		let img = new Image();
+		img.crossOrigin = 'Anonymous';
+		img.onload = () => resolve(img);
+		img.src = url;
+	});
+}
+
+function getImageData(img, ...args) {
+	if(img instanceof Image) {
+		let canvas = document.createElement('canvas');
+		let ctx = canvas.getContext('2d');
+		Object.assign(canvas, { width: img.width, height: img.height });
+		ctx.drawImage(img, 0, 0);
+		let data;
+		if(args.length) {
+			data = ctx.getImageData(...args);
+		}
+		else {
+			data = ctx.getImageData(0, 0, img.width, img.height);
+		}
+		Object.assign(data, { canvas, ctx });
+		return data;
+	}
+	else {
+		return ctx.getImageData(img, ...args);
+	}
+}
+
+function xyToI(x, y, w, h) {
+	return x + w * y;
+}
+
+function iToXY(i, w, h) {
+	return createVector(i % w, floor(i / w));
+}
+
 
 function random(low = 1, high = null) {
+	if(Array.isArray(low)) {
+		return low[floor(Math.random() * low.length)];
+	}
 	if(high === null) {
 		return Math.random() * low;
 	}
@@ -308,26 +435,42 @@ function map(n, a, b, c, d) {
 }
 
 function lerp(start, stop, amt) {
+	if(start instanceof Vector) {
+		return Vector.lerp(start, stop, amt);
+	}
 	return amt * (stop - start) + start;
 }
 
-function cos(input) {
-	return Math.cos(input % TAU);
+function cos(input, mult = null) {
+	let c = Math.cos(input % TAU);
+	if(mult === null) {
+		return c;
+	}
+	return c * mult;
 }
 
-function sin(input) {
-	return Math.sin(input % TAU);
+function sin(input, mult = null) {
+	let s = Math.sin(input % TAU);
+	if(mult === null) {
+		return s;
+	}
+	return s * mult;
 }
 
 
-function createVector(x, y) {
-	return new Vector(x, y);
+function createVector(x, y, z) {
+	return new Vector(x, y, z);
 }
 
 class Vector {
-	constructor(x = 0, y = 0) {
+	constructor(x = 0, y = 0, z = 0) {
 		this.x = x;
 		this.y = y;
+		this.z = z;
+	}
+	toString() {
+		let { x, y, z } = this;
+		return `{ x: ${x}, y: ${y}, z: ${z} }`;
 	}
 	
 	static fromAngle(angle) {
@@ -351,14 +494,25 @@ class Vector {
 		return v;
 	}
 	
+	static lerp(start, stop, amt = 0.5, apply = false) {
+		let x = start.x === stop.x ? start.x : lerp(start.x, stop.x, amt);
+		let y = start.y === stop.y ? start.y : lerp(start.y, stop.y, amt);
+		let z = start.z === stop.z ? start.z : lerp(start.z, stop.z, amt);
+		if(apply) {
+			return start.set(x, y, z);
+		}
+		return createVector(x, y, z);
+	}
+	
 	draw() {
 		point(this.x, this.y);
 	}
 	
 	set(x = this.x, y = this.y) {
 		if(x instanceof Vector) {
-			y = x.y;
-			x = x.x;
+			this.x = x.x;
+			this.y = x.y;
+			return this;
 		}
 		this.x = x;
 		this.y = y;
@@ -368,7 +522,7 @@ class Vector {
 		return createVector(this.x, this.y);
 	}
 
-	add(x = 0, y = 0) {
+	add(x = 0, y = x) {
 		if(x instanceof Vector) {
 			return this.add(x.x, x.y);
 		}
@@ -376,7 +530,7 @@ class Vector {
 		this.y += y;
 		return this;
 	}
-	sub(x = 0, y = 0) {
+	sub(x = 0, y = x) {
 		if(x instanceof Vector) {
 			return this.sub(x.x, x.y);
 		}
@@ -414,9 +568,9 @@ class Vector {
 	}
 	mag() {
 		return Math.sqrt(this.magSq());
+		// return hypot(this.x, this.y);
 	}
-	normalize() {
-		let mag = this.mag();
+	normalize(mag = this.mag()) {
 		return mag === 0 ? this : this.div(mag);
 	}
 	setMag(mag) {
@@ -439,6 +593,33 @@ class Vector {
 	dist(v) {
 		let d = v.copy().sub(this);
 		return d.mag();
+	}
+	lerp(stop, amt) {
+		return Vector.lerp(this, stop, amt, true);
+	}
+	round() {
+		this.x = round(this.x);
+		this.y = round(this.y);
+		this.z = round(this.z);
+		return this;
+	}
+	floor() {
+		this.x = floor(this.x);
+		this.y = floor(this.y);
+		this.z = floor(this.z);
+		return this;
+	}
+	fastFloor() {
+		this.x = ~~this.x;
+		this.y = ~~this.y;
+		this.z = ~~this.z;
+		return this;
+	}
+	ceil() {
+		this.x = ceil(this.x);
+		this.y = ceil(this.y);
+		this.z = ceil(this.z);
+		return this;
 	}
 }
 
