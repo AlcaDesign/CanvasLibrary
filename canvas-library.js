@@ -22,6 +22,7 @@ const TWELVE     = 12.0;
 const SIXTEEN    = 16.0;
 const THIRTY     = 30.0;
 const THIRTY_TWO = 32.0;
+const SIXTY      = 60.0;
 const HUNDRED    = 100.0;
 const THOUSAND   = 1000.0;
 
@@ -38,6 +39,7 @@ const TWELFTH         = ONE / TWELVE;
 const SIXTEENTH       = ONE / SIXTEEN;
 const ONE_THIRTIETH   = ONE / THIRTY;
 const THIRTY_SECONDTH = ONE / THIRTY_TWO;
+const SIXTIETH        = ONE / SIXTY;
 
 const TENTH              = 1e-1;
 const HUNDREDTH          = 1e-2;
@@ -67,11 +69,18 @@ const HALF_TAU            = PI;
 const THIRD_TAU           = TAU * THIRD;
 const QUARTER_TAU         = HALF_PI;
 const FIFTH_TAU           = TAU * FIFTH;
-const SIXTH_TAU           = THIRD_PI * TWO;
+const SIXTH_TAU           = THIRD_PI;
 const EIGHTH_TAU          = QUARTER_PI;
 const TWELFTH_TAU         = SIXTH_PI;
 const SIXTEENTH_TAU       = EIGHTH_PI;
 const THIRTY_SECONDTH_TAU = SIXTEENTH_PI;
+
+const SQRT_3              = sqrt(THREE);
+const SQRT_4              = sqrt(FOUR);
+const SQRT_5              = sqrt(FIVE);
+
+const PHI                 = (1 + Math.sqrt(5)) / 2;
+const GOLDEN_ANGLE        = 1 / (PHI * PHI);
 
 let _defaulCanvasOptions = {
 		autoClear: false,
@@ -92,7 +101,7 @@ if(canvas === null) {
 let ctx = canvas.getContext('2d');
 let _anim, _lastCanvasTime, canvasFrameRate, frameCount, width, height, width_half, height_half;
 let _canvasCurrentlyCentered = false;
-let mouseIn = false, mouseDown = false, mousePos = null;
+let mouseIn = false, mouseDown = false, mousePos = null, mousePosPrev = null;
 
 function updateMouse(e) { // Modified from p5.js
 	if(e && !e.clientX) {
@@ -108,6 +117,7 @@ function updateMouse(e) { // Modified from p5.js
 	if(y < 0) y = 0;
 	else if(y > height) y = height;
 	if(mousePos) {
+		mousePosPrev = mousePos.copy();
 		mousePos.set(x, y);
 	}
 	// return { x, y, winX: e.clientX, winY: e.clientY, id: e.identifier };
@@ -121,6 +131,7 @@ canvas.addEventListener('mouseup',    e => (updateMouse(e), mouseDown = false));
 window.addEventListener('resize', _resizeCanvas);
 window.addEventListener('load', () => {
 	mousePos = createVector();
+	mousePosPrev = createVector();
 	Object.assign(
 		_canvasOptions,
 		_defaulCanvasOptions,
@@ -202,23 +213,46 @@ function fillStyle(...args) {
 	}
 }
 
+function lineWidth(w) {
+	if(typeof w === 'number') {
+		ctx.lineWidth = w;
+	}
+	return ctx.lineWidth;
+}
+
 function strokeStyle(...args) {
 	if(args.length === 1) {
 		let a = args[0];
 		if(typeof a === 'string' || a instanceof CanvasGradient) {
-			ctx.strokeStyle = args[0];
+			ctx.strokeStyle = a;
 		}
 	}
-	else if(args.length === 0) {
-		return ctx.strokeStyle;
+	else if(args.length === 2) {
+		strokeStyle(args[0]);
+		lineWidth(args[1]);
 	}
+	return ctx.strokeStyle;
 }
 
-function fill() {
+function hsl(hue, sat, light, alpha = 1) {
+	hue = hue % 360;
+	if(hue < 0) {
+		hue += 360;
+	}
+	return `hsl(${hue} ${sat}% ${light}% / ${alpha})`;
+}
+
+function fill(...args) {
+	if(args.length) {
+		fillStyle(...args);
+	}
 	ctx.fill();
 }
 
-function stroke() {
+function stroke(...args) {
+	if(args.length) {
+		strokeStyle(...args);
+	}
 	ctx.stroke();
 }
 
@@ -236,7 +270,7 @@ function translate(...args) {
 		ctx.translate(x.x, x.y);
 	}
 	else {
-		ctx.translate(...args);
+		ctx.translate(args[0], args[1] || 0);
 	}
 }
 
@@ -252,6 +286,14 @@ function scale(x = 1, y = x) {
 	ctx.scale(x, y);
 }
 
+function shearX(rad) {
+	ctx.transform(1, 0, tan(rad), 1, 0, 0);
+}
+
+function shearY(rad) {
+	ctx.transform(1, tan(rad), 0, 1, 0, 0);
+}
+
 function compensateCanvas() {
 	let offX = 0;
 	let offY = 0;
@@ -260,6 +302,34 @@ function compensateCanvas() {
 	if(offX || offY) {
 		translate(offX, offY);
 	}
+}
+
+const compOper = {
+		default:		'source-over',		sourceOver:		'source-over',		sourceIn:			'source-in',
+		sourceOut:		'source-out',		sourceAtop:		'source-atop',		destinationOver:	'destination-over',
+		destinationIn:	'destination-in',	destinationOut:	'destination-out',	destinationAtop:	'destination-atop',
+		lighter:		'lighter',			copy:			'copy',				xor: 				'xor',
+		multiply:		'multiply',			screen:			'screen',			overlay:			'overlay',
+		darken:			'darken',			lighten:		'lighten',			colorDodge:			'color-dodge',
+		colorBurn:		'color-burn',		hardLight:		'hard-light',		softLight:			'soft-light',
+		difference:		'difference',		exclusion:		'exclusion',		hue:				'hue',
+		saturation:		'saturation',		color:			'color',			luminosity:			'luminosity',
+		source: {
+			over:		'source-over',		in:				'source-in',		out:				'source-out',
+			atop:		'source-atop'
+		},
+		destination: {
+			over:		'destination-over',	in:				'destination-in',	out:				'destination-out',
+			atop:		'destination-atop'
+		},
+		light: {
+			hard:		'hard-light',		soft:			'soft-light'
+		}
+	};
+
+
+function compositeOperation(type = compOper.default) { // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/globalCompositeOperation
+	ctx.globalCompositeOperation = type;
 }
 
 function beginPath() {
@@ -324,8 +394,22 @@ function vertices(...verts) {
 	}
 }
 
-function rect(x = 0, y = 0, w = 10, h = w) {
-	ctx.rect(x, y, w, h);
+function arcTo(...args) {
+	ctx.arcTo(...args);
+}
+
+function rect(x = 0, y = 0, w = 10, h = w, r = 0) {
+	if(r > 0) {
+		moveTo(x + r, y);
+		arcTo(x + w, y,     x + w, y + h, r);
+		arcTo(x + w, y + h, x,     y + h, r);
+		arcTo(x,     y + h, x,     y,     r);
+		arcTo(x,     y,     x + w, y,     r);
+		closePath();
+	}
+	else {
+		ctx.rect(x, y, w, h);
+	}
 }
 
 function arc(...args) {
@@ -390,6 +474,17 @@ function loadImage(url) {
 	});
 }
 
+function loadVideo(url) {
+	return new Promise((resolve, reject) => {
+		let vid = document.createElement('video');
+		vid.crossOrigin = 'anonymous';
+		vid.onloadeddata = () => resolve(vid);
+		vid.preload = true;
+		vid.src = url;
+		vid.load();
+	});
+}
+
 function getImageData(img, ...args) {
 	if(img instanceof Image) {
 		let canvas = document.createElement('canvas');
@@ -434,11 +529,45 @@ function map(n, a, b, c, d) {
 	return (n - a) * (d - c) / (b - a) + c;
 }
 
+function constrain(n, mn, mx) {
+	return max(mn, min(mx, n));
+}
+
 function lerp(start, stop, amt) {
 	if(start instanceof Vector) {
 		return Vector.lerp(start, stop, amt);
 	}
 	return amt * (stop - start) + start;
+}
+
+function _distSq(x1, y1, x2, y2) {
+	let _x = x2 - x1;
+	let _y = y2 - y1;
+	return _x * _x + _y * _y;
+}
+
+function distSq(x1, y1, x2, y2) {
+	if(x1 === undefined || y1 === undefined || x2 === undefined || y2 === undefined) {
+		return 0;
+	}
+	else if(typeof x1 === 'number') {
+		if(x1 === x1) {
+			return _distSq(x1, y1, x2, y2);
+		}
+		return 0;
+	}
+	else if('x' in x1) {
+		return _distSq(x1.x, x1.y, y1.x, y1.y);
+	}
+	return 0;
+}
+
+function dist(...args) {
+	let d = distSq(...args);
+	if(d === 0) {
+		return 0;
+	}
+	return sqrt(d);
 }
 
 function cos(input, mult = null) {
@@ -504,80 +633,131 @@ class Vector {
 		return createVector(x, y, z);
 	}
 	
+	equals(vec) {
+		return this.x === vec.x && this.y === vec.y;
+	}
+	
+	equals3D(vec = {}) {
+		return this.x === vec.x && this.y === vec.y && this.z === vec.z;
+	}
+	
 	draw() {
 		point(this.x, this.y);
 	}
 	
-	set(x = this.x, y = this.y) {
+	set(x = this.x, y = this.y, z = this.z) {
 		if(x instanceof Vector) {
 			this.x = x.x;
 			this.y = x.y;
+			this.z = x.z;
 			return this;
 		}
 		this.x = x;
 		this.y = y;
+		this.z = z;
 		return this;
 	}
 	copy() {
-		return createVector(this.x, this.y);
+		return createVector(this.x, this.y, this.z);
 	}
 
-	add(x = 0, y = x) {
+	add(x = 0, y = x, z = 0) {
 		if(x instanceof Vector) {
-			return this.add(x.x, x.y);
+			return this.add(x.x, x.y, x.z);
 		}
 		this.x += x;
 		this.y += y;
+		this.z += z;
 		return this;
 	}
-	sub(x = 0, y = x) {
+	sub(x = 0, y = x, z = x) {
 		if(x instanceof Vector) {
-			return this.sub(x.x, x.y);
+			return this.sub(x.x, x.y, x.z);
 		}
 		this.x -= x;
 		this.y -= y;
+		this.z -= z;
 		return this;
 	}
-	mult(x = 1, y = x) {
+	mult(x = 1, y = x, z = x) {
 		if(x instanceof Vector) {
-			return this.mult(x.x, x.y);
+			return this.mult(x.x, x.y, x.z);
 		}
 		this.x *= x;
 		this.y *= y;
+		this.z *= z;
 		return this;
 	}
-	div(x = 1, y = null) {
-		if(y === null) {
-			y = x;
-		}
+	div(x = 1, y = x, z = x) {
 		this.x /= x;
 		this.y /= y;
+		this.z /= z;
 		return this;
 	}
 	
 	heading() {
 		return atan2(this.y, this.x);
 	}
-	rotate(a) {
+	rotate(a = 0) {
+		if(a === 0) {
+			return this;
+		}
 		let newHeading = this.heading() + a;
 		let mag = this.mag();
 		return this.set(cos(newHeading), sin(newHeading)).mult(mag);
 	}
+	rotateXY(a) {
+		this.rotate(a);
+		return this;
+	}
+	rotateYZ(a) {
+		let v = new Vector(this.y, this.z).rotate(a);
+		this.y = v.x;
+		this.z = v.y;
+		return this;
+	}
+	rotateZX(a) {
+		let v = new Vector(this.z, this.x).rotate(a);
+		this.z = v.x;
+		this.x = v.y;
+		return this;
+	}
 	magSq() {
 		return this.x * this.x + this.y * this.y;
+	}
+	magSq3D() {
+		return this.x * this.x + this.y * this.y + this.z * this.z;
 	}
 	mag() {
 		return Math.sqrt(this.magSq());
 		// return hypot(this.x, this.y);
 	}
+	mag3D() {
+		return Math.sqrt(this.magSq3D());
+		// return hypot(this.x, this.y);
+	}
 	normalize(mag = this.mag()) {
+		return mag === 0 ? this : this.div(mag);
+	}
+	normalize3D(mag = this.mag3D()) {
 		return mag === 0 ? this : this.div(mag);
 	}
 	setMag(mag) {
 		return this.normalize().mult(mag);
 	}
+	setMag3D(mag) {
+		return this.normalize3D().mult(mag);
+	}
 	limit(max) {
 		let magSq = this.magSq();
+		if(magSq > max * max) {
+			this.div(sqrt(magSq));
+			this.mult(max);
+		}
+		return this;
+	}
+	limit3D(max) {
+		let magSq = this.magSq3D();
 		if(magSq > max * max) {
 			this.div(sqrt(magSq));
 			this.mult(max);
@@ -590,9 +770,19 @@ class Vector {
 		}
 		return this.x * x + this.y * y;
 	}
+	dot3D(x = 0, y = 0, z = 0) {
+		if(x instanceof Vector) {
+			return this.dot(x.x, x.y, x.z);
+		}
+		return this.x * x + this.y * y + this.z * z;
+	}
 	dist(v) {
 		let d = v.copy().sub(this);
 		return d.mag();
+	}
+	dist3D(v) {
+		let d = v.copy().sub(this);
+		return d.mag3D();
 	}
 	lerp(stop, amt) {
 		return Vector.lerp(this, stop, amt, true);
@@ -712,4 +902,23 @@ function getTimeArraySmooth(...opts) {
 	let minutes = (arr[1] + seconds) / 60;
 	let hours = ((arr[0] % 12 || 12) + minutes) / 12;
 	return [ hours, minutes, seconds, milliseconds ];
+}
+
+function loadWebFont(fontName) {
+	if('WebFont' in window === false) {
+		return Promise.reject('WebFont not available. Load using this script: https://cdnjs.cloudflare.com/ajax/libs/webfont/1.6.28/webfontloader.js');
+	}
+	if(fontName === '') {
+		return Promise.resolve();
+	}
+	return new Promise((resolve, reject) => {
+		WebFont.load({
+			google: { families: [ fontName ] },
+			fontactive: resolve
+		});
+	});
+}
+
+function isFontDefault() {
+	return ctx.font === '10px sans-serif';
 }
