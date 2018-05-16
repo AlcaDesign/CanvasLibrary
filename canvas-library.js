@@ -633,6 +633,19 @@ class Vector {
 		return createVector(x, y, z);
 	}
 	
+	get xy() { return [ this.x, this.y ]; }
+	get yx() { return [ this.y, this.x ]; }
+	get xz() { return [ this.x, this.z ]; }
+	get zx() { return [ this.z, this.x ]; }
+	get yz() { return [ this.y, this.z ]; }
+	get zy() { return [ this.z, this.y ]; }
+	get xyz() { return [ this.x, this.y, this.z ]; }
+	get xzy() { return [ this.x, this.z, this.y ]; }
+	get yxz() { return [ this.y, this.x, this.z ]; }
+	get yzx() { return [ this.y, this.z, this.x ]; }
+	get zyx() { return [ this.z, this.y, this.x ]; }
+	get zxy() { return [ this.z, this.x, this.y ]; }
+	
 	equals(vec) {
 		return this.x === vec.x && this.y === vec.y;
 	}
