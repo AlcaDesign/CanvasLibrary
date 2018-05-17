@@ -485,6 +485,11 @@ function loadVideo(url) {
 	});
 }
 
+function loadJSON(url) {
+	return fetch(url)
+	.then(res => res.json());
+}
+
 function getImageData(img, ...args) {
 	if(img instanceof Image) {
 		let canvas = document.createElement('canvas');
