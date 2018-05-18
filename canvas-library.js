@@ -394,8 +394,8 @@ function vertices(...verts) {
 	}
 }
 
-function arcTo(...args) {
-	ctx.arcTo(...args);
+function arcTo(x1 = 0, y1 = 0, x2 = 0, y2 = 0, radius = 50) {
+	ctx.arcTo(x1, y1, x2, y2, radius);
 }
 
 function rect(x = 0, y = 0, w = 10, h = w, r = 0) {
@@ -412,21 +412,36 @@ function rect(x = 0, y = 0, w = 10, h = w, r = 0) {
 	}
 }
 
-function arc(...args) {
-	ctx.arc(...args);
+function arc(x = 0, y = 0, radius = 50, startAngle = 0, endAngle = Math.PI * 2, anticlockwise = false) {
+	ctx.arc(x, y, radius, startAngle, endAngle, anticlockwise);
 }
 
-function circle(x = 0, y = undefined, r = 50) {
+function circle(x = 0, y = undefined, rX = 50, rY = undefined) {
 	if(typeof x !== 'number' && 'x' in x) {
-		r = y === undefined ? r : y;
+		if(y !== undefined) {
+			rX = y;
+		}
 		y = x.y;
 		x = x.x;
 	}
 	else if(y === undefined) {
 		y = 0;
 	}
-	ctx.moveTo(x + r, y);
-	ctx.arc(x, y, r, 0, TAU);
+	if(typeof rX !== 'number' && 'x' in rX) {
+		rY = rX.y;
+		rX = rX.x;
+	}
+	ctx.moveTo(x + rX, y);
+	if(rY !== undefined) {
+		ellipse(x, y, rX, rY);
+	}
+	else {
+		ctx.arc(x, y, rX, 0, TAU);
+	}
+}
+
+function ellipse(x = 0, y = 0, radiusX = 50, radiusY = 50, rotation = 0, startAngle = 0, endAngle = Math.PI * 2, anticlockwise = false) {
+	ctx.ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle, anticlockwise);
 }
 
 function regularPolygon(sides, radius = 50, rotation = 0) {
@@ -503,8 +518,7 @@ function getImageData(img, ...args) {
 		else {
 			data = ctx.getImageData(0, 0, img.width, img.height);
 		}
-		Object.assign(data, { canvas, ctx });
-		return data;
+		return Object.assign(data, { canvas, ctx });
 	}
 	else {
 		return ctx.getImageData(img, ...args);
@@ -567,8 +581,8 @@ function distSq(x1, y1, x2, y2) {
 	return 0;
 }
 
-function dist(...args) {
-	let d = distSq(...args);
+function dist(x1, y1, x2, y2) {
+	let d = distSq(x1, y1, x2, y2);
 	if(d === 0) {
 		return 0;
 	}
