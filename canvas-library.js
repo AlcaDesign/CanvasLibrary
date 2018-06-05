@@ -187,7 +187,7 @@ function clear(x, y, w, h) {
 	}
 }
 
-function background(a, b, c) {
+function background(a) {
 	push();
 	if(typeof a !== 'number') {
 		fillStyle(a);
@@ -264,22 +264,35 @@ function pop() {
 	ctx.restore();
 }
 
-function translate(...args) {
-	let [ x ] = args;
-	if(x instanceof Vector) {
+function translate(x = 0, y = 0) {
+	if(typeof x === 'number') {
+		ctx.translate(x, y);
+	}
+	else if('x' in x) {
 		ctx.translate(x.x, x.y);
 	}
-	else {
-		ctx.translate(args[0], args[1] || 0);
+}
+
+function translateCenter(x = 0, y = 0) {
+	ctx.translate(width_half + x, height_half + y);
+}
+
+function rotate(rot, offsetX, offsetY) {
+	if(offsetX === undefined) {
+		ctx.rotate(rot % TAU);
 	}
-}
-
-function translateCenter() {
-	ctx.translate(width_half, height_half);
-}
-
-function rotate(rot) {
-	ctx.rotate(rot % TAU);
+	else if(typeof offsetX !== 'number') {
+		if('x' in offsetX) {
+			ctx.translate(offsetX.x, offsetX.y);
+			ctx.rotate(rot % TAU);
+			ctx.translate(-offsetX.x, -offsetX.y);
+		}
+	}
+	else {
+		ctx.translate(offsetX, offsetY);
+		ctx.rotate(rot % TAU);
+		ctx.translate(-offsetX, -offsetY);
+	}
 }
 
 function scale(x = 1, y = x) {
@@ -621,13 +634,15 @@ class Vector {
 		return `{ x: ${x}, y: ${y}, z: ${z} }`;
 	}
 	
-	static fromAngle(angle) {
-		return createVector(cos(angle), sin(angle));
+	static fromAngle(angle, mult = 1) {
+		let v = createVector(cos(angle), sin(angle));
+		if(mult !== 1) v.mult(mult);
+		return v;
 	}
 	
 	static random2D(angle = true, mult = 1) {
 		let v;
-		if(angle) {
+		if(angle === true) {
 			v = Vector.fromAngle(random(TAU));
 		}
 		else {
@@ -944,10 +959,19 @@ function loadWebFont(fontName) {
 		return Promise.resolve();
 	}
 	return new Promise((resolve, reject) => {
-		WebFont.load({
-			google: { families: [ fontName ] },
-			fontactive: resolve
-		});
+		let options = { fontactive: resolve };
+		let providers = {};
+		if(typeof fontName === 'string') {
+			providers = { google: { families: [ fontName ] } };
+		}
+		else if(Array.isArray(fontName)) {
+			providers = { google: { families: fontName } };
+		}
+		else {
+			providers = fontName;
+		}
+		Object.assign(options, providers);
+		WebFont.load(options);
 	});
 }
 
