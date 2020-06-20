@@ -105,8 +105,10 @@ let _defaulCanvasOptions = {
 		autoClear: false,
 		autoCompensate: true,
 		autoPushPop: false,
-		centered: false,
 		canvas: true,
+		centered: false,
+		desynchronized: false,
+		drawAndStop: false,
 		width: null,
 		height: null
 	};
@@ -117,16 +119,28 @@ if(canvas === null) {
 	canvas.id = 'canvas';
 	document.body.appendChild(canvas);
 }
-let ctx = canvas.getContext('2d');
+let ctx = canvas.getContext('2d', {
+	desynchronized: window.canvasOptions && window.canvasOptions.desynchronized !== undefined ?
+		window.canvasOptions.desynchronized : _defaulCanvasOptions.desynchronized
+	// preserveDrawingBuffer: true // WebGL
+});
 const _originalCtx = ctx;
 let _anim, _lastCanvasTime, canvasFrameRate, frameCount, width, height, width_half, height_half, width_quarter, height_quarter;
 let _canvasCurrentlyCentered = false;
-let mouseIn = false, mouseDown = false, mouseMove = null, mousePos = null, mousePosPrev = null;
+let _logMouseEvents = false;
+let mouseUpdate = -Infinity, mouseIn = false, mouseDown = false, mouseMove = null, mousePos = null, mousePosPrev = null;
 
-function updateMouse(e) { // Modified from p5.js
-	if(e && !e.clientX) {
-		e = e.touches ? e.touches[0] : (e.changedTouches ? e.changedTouches[0] : e);
+function updateMouse(e, eventName) { // Modified from p5.js
+	if(_logMouseEvents) {
+		console.log('Mouse event', eventName, e);
 	}
+	if(e && !e.clientX) {
+		e = e.touches && e.touches.length ? e.touches[0] : (e.changedTouches ? e.changedTouches[0] : e);
+	}
+	if(!e) {
+		return 'Missing event data';
+	}
+	mouseUpdate = e.timeStamp === undefined ? performance.now() : e.timeStamp;
 	let rect = canvas.getBoundingClientRect();
 	let sx   = canvas.scrollWidth / width;
 	let sy   = canvas.scrollHeight / height;
@@ -167,19 +181,19 @@ function updateMouse(e) { // Modified from p5.js
 // 	cb(e);
 // }));
 
-canvas.addEventListener('mouseenter', e => (updateMouse(e), mouseIn = true));
-canvas.addEventListener('mouseleave', e => (updateMouse(e), mouseIn = false, mouseDown = false));
-canvas.addEventListener('mousemove',  e => (updateMouse(e), mouseIn = true, mouseMove = e.timeStamp));
-canvas.addEventListener('mousedown',  e => (updateMouse(e), mouseIn = true, mouseDown = true));
-canvas.addEventListener('mouseup',    e => (updateMouse(e), mouseDown = false));
-canvas.addEventListener('touchstart', e => (updateMouse(e), mouseIn = true));
-canvas.addEventListener('touchend', e => (updateMouse(e), mouseIn = false, mouseDown = false));
-canvas.addEventListener('touchcancel', e => (updateMouse(e), mouseIn = false, mouseDown = false));
-canvas.addEventListener('touchmove',  e => (updateMouse(e), mouseIn = true));
+canvas.addEventListener('mouseenter',  e => (updateMouse(e, 'mouseenter'), mouseIn = true));
+canvas.addEventListener('mouseleave',  e => (updateMouse(e, 'mouseleave'), mouseIn = false, mouseDown = false));
+canvas.addEventListener('mousemove',   e => (updateMouse(e, 'mousemove'), mouseIn = true, mouseMove = e.timeStamp));
+canvas.addEventListener('mousedown',   e => (updateMouse(e, 'mousedown'), mouseIn = true, mouseDown = true));
+canvas.addEventListener('mouseup',     e => (updateMouse(e, 'mouseup'), mouseDown = false));
+canvas.addEventListener('touchstart',  e => (updateMouse(e, 'touchstart'), mouseIn = true));
+canvas.addEventListener('touchend',    e => (updateMouse(e, 'touchend'), mouseIn = false, mouseDown = false));
+canvas.addEventListener('touchcancel', e => (updateMouse(e, 'touchcancel'), mouseIn = false, mouseDown = false));
+canvas.addEventListener('touchmove',   e => (updateMouse(e, 'touchmove'), mouseIn = true));
 window.addEventListener('resize', _resizeCanvas);
 window.addEventListener('load', () => {
-	mousePos = createVector();
-	mousePosPrev = createVector();
+	mousePos = new Vector();
+	mousePosPrev = new Vector();
 	Object.assign(
 		_canvasOptions,
 		_defaulCanvasOptions,
@@ -199,7 +213,9 @@ window.addEventListener('load', () => {
 function _draw(timestamp) {
 	frameCount++;
 	canvasFrameRate = 1000.0 / (timestamp - _lastCanvasTime);
-	_lastCanvasTime = timestamp;
+	if(!_lastCanvasTime) {
+		_lastCanvasTime = timestamp;
+	}
 	ctx = _originalCtx;
 	_canvasOptions.autoClear && clear(null);
 	if(_canvasOptions.autoPushPop) {
@@ -207,14 +223,18 @@ function _draw(timestamp) {
 		_canvasOptions.centered && (_canvasCurrentlyCentered = true) && translateCenter();
 		_canvasOptions.autoCompensate && compensateCanvas();
 	}
-	'draw' in window && window.draw(timestamp);
+	document.body.style.background = 'black !important';
+	document.body.style.backgroundColor = 'black !important';
 	_canvasOptions.autoPushPop && pop();
 	_canvasCurrentlyCentered = false;
+	_lastCanvasTime = timestamp;
+	if(_canvasOptions.drawAndStop) {
+		return;
+	}
 	_anim = requestAnimationFrame(_draw);
 }
 
 function _resizeCanvas(specificCanvas) {
-	// if(_canvasOptions.width === null)
 	width = canvas.width = _canvasOptions.width !== null ? _canvasOptions.width : window.innerWidth;
 	height = canvas.height = _canvasOptions.height !== null ? _canvasOptions.height : window.innerHeight;
 	width_quarter = (width_half = width * HALF) * HALF;
@@ -433,16 +453,26 @@ function clip() {
 }
 
 function createLinearGradient(x1 = -100, y1 = -100, x2 = 100, y2 = 100) {
-// 	if(typeof x1 !== 'number') {
-// 		if('x' in x1) {
-			
-// 		}
-// 	}
+	if(typeof x1 !== 'number' && typeof y1 !== 'number') {
+		({ x: x2, y: y2 } = y1);
+		({ x: x1, y: y1 } = x1);
+	}
+	else if(typeof x1 !== 'number' && typeof y1 === 'number' && typeof x2 === 'number') {
+		[ x2, y2 ] = [ y1, x2 ];
+		({ x: x1, y: y1 } = x1);
+	}
+	else if(typeof x1 === 'number' && typeof y1 === 'number' && typeof x2 !== 'number') {
+		({ x: x2, y: y2 } = x2);
+	}
 	return ctx.createLinearGradient(x1, y1, x2, y2);
 }
 
 function createRadialGradient(x1 = 0, y1 = 0, r1 = 0, x2 = 0, y2 = 0, r2 = 200) {
 	return ctx.createRadialGradient(x1, y1, r1, x2, y2, r2);
+}
+
+function createPattern(image, repetition = null) {
+	return ctx.createPattern(image, repetition);
 }
 
 function drawImage(img, x = 0, y = 0, ...args) {
@@ -591,11 +621,15 @@ function beginPath() {
 	ctx.beginPath();
 }
 
+function isVectorish(n) {
+	return n instanceof Vector || (typeof n === 'object' && 'x' in n && 'y' in n);
+}
+
 function moveTo(x, y) {
 	if(typeof x === 'number') {
 		ctx.moveTo(x, y);
 	}
-	else if('x' in x) {
+	else if(isVectorish(x)) {
 		ctx.moveTo(x.x, x.y);
 	}
 }
@@ -604,7 +638,7 @@ function lineTo(x, y) {
 	if(typeof x === 'number') {
 		ctx.lineTo(x, y);
 	}
-	else if('x' in x) {
+	else if(isVectorish(x)) {
 		ctx.lineTo(x.x, x.y);
 	}
 }
@@ -704,7 +738,7 @@ function line(x = 0, y = 0, x_ = 0, y_ = 0) {
 		moveTo(x, y);
 		lineTo(x_, y_);
 	}
-	else if('x' in x) {
+	else if(isVectorish(x)) {
 		moveTo(x);
 		lineTo(y, x_);
 	}
@@ -722,7 +756,7 @@ function vertices(...verts) {
 		if(Array.isArray(n)) {
 			([ x, y ] = n);
 		}
-		else if(n instanceof Vector || ('x' in n && 'y' in n)) {
+		else if(isVectorish(n)) {
 			({ x, y } = n);
 		}
 		lineTo(x, y);
@@ -733,7 +767,18 @@ function arcTo(x1 = 0, y1 = 0, x2 = 0, y2 = 0, radius = 50) {
 	ctx.arcTo(x1, y1, x2, y2, radius);
 }
 
-function rect(x = 0, y = 0, w = 10, h = w, r = 0) {
+function rect(x, y, w, h, r) {
+	if(isVectorish(x)) {
+		// Shift args down 1
+		[ w, h, r ] = [ y, w, h ];
+		({ x, y } = x);
+	}
+	// x = 0, y = 0, w = 10, h = w, r = 0
+	x = x ?? 0;
+	y = y ?? 0;
+	w = w ?? 10;
+	h = h ?? w;
+	r = r ?? 0;
 	if(r > 0) {
 		moveTo(x + r, y);
 		arcTo(x + w, y,     x + w, y + h, r);
@@ -747,26 +792,35 @@ function rect(x = 0, y = 0, w = 10, h = w, r = 0) {
 	}
 }
 
-function arc(x = 0, y = 0, radius = 50, startAngle = 0, endAngle = Math.PI * 2, anticlockwise = false) {
+function arc(x, y, radius, startAngle, endAngle, anticlockwise) {
+	if(isVectorish(x)) {
+		// Shift args down 1
+		[ radius, startAngle, endAngle, anticlockwise ] = [ y, radius, startAngle, endAngle ];
+		({ x, y } = x);
+	}
+	// x = 0, y = 0, radius = 50, startAngle = 0, endAngle = Math.PI * 2, anticlockwise = false
+	x = x ?? 0;
+	y = y ?? 0;
+	radius = radius ?? 50;
+	startAngle = startAngle ?? 0;
+	endAngle = endAngle ?? TAU;
+	anticlockwise = anticlockwise ?? false;
 	if(radius < 0) radius = 0;
 	ctx.arc(x, y, radius, startAngle, endAngle, anticlockwise);
 }
 
-function circle(x = 0, y = undefined, rX = 20, rY = undefined) {
-	if(typeof x !== 'number' && 'x' in x) {
-		if(y !== undefined) {
-			rX = y;
-		}
-		y = x.y;
-		x = x.x;
+// function circle(x = 0, y = undefined, rX = 20, rY = undefined) {
+function circle(x, y, rX, rY) {
+	if(isVectorish(x)) {
+		[ rX, rY ] = [ y, rX ];
+		({ x, y } = x);
 	}
-	else if(y === undefined) {
-		y = 0;
+	if(isVectorish(rX)) {
+		({ x: rX, y: rY } = rX);
 	}
-	if(typeof rX !== 'number' && 'x' in rX) {
-		rY = rX.y;
-		rX = rX.x;
-	}
+	x = x ?? 0;
+	y = y ?? 0;
+	rX = rX ?? 20;
 	ctx.moveTo(x + rX, y);
 	if(rY !== undefined) {
 		ellipse(x, y, rX, rY);
@@ -777,7 +831,24 @@ function circle(x = 0, y = undefined, rX = 20, rY = undefined) {
 	}
 }
 
-function ellipse(x = 0, y = 0, rX = 50, rY = 50, rot = 0, angStart = 0, angEnd = Math.PI * 2, antiCw = false) {
+// function ellipse(x = 0, y = 0, rX = 50, rY = 50, rot = 0, angStart = 0, angEnd = Math.PI * 2, antiCw = false) {
+function ellipse(x, y, rX, rY, rot, angStart, angEnd, antiCw) {
+	if(isVectorish(x)) {
+		[ rX, rY, rot, angStart, angEnd, antiCw ] = [ y, rX, rY, rot, angStart, angEnd ];
+		({ x, y } = x);
+	}
+	if(isVectorish(rX)) {
+		[ rot, angStart, angEnd, antiCw ] = [ rY, rot, angStart, angEnd ];
+		({ x: rX, y: rY } = rX);
+	}
+	x = x ?? 0;
+	y = y ?? 0;
+	rX = rX ?? 50;
+	rY = rY ?? rX;
+	rot = rot ?? 0;
+	angStart = angStart ?? 0;
+	angEnd = angEnd ?? TAU;
+	antiCw = antiCw ?? false;
 	if(rX < 0) rX = 0;
 	if(rY < 0) rY = 0;
 	ctx.ellipse(x, y, rX, rY, rot, angStart, angEnd, antiCw);
@@ -812,7 +883,7 @@ function genRegularPolygon(sides = 3, radius = 50, rotation = 0) {
 		let t = i * iSizes + rotation;
 		let x = cos(t) * radius;
 		let y = sin(t) * radius;
-		let point = createVector(x, y);
+		let point = new Vector(x, y);
 		Object.assign(point, { i, t });
 		data.points.push(point);
 	}
@@ -874,19 +945,19 @@ function getImageData(img, ...args) {
 	}
 }
 
-function xyToI(x, y, w = 1, h = Infinity) {
-	if(typeof x !== 'number' && 'x' in x) {
-		h = w;
-		w = y;
+function xyToI(x, y, w, h) {
+	if(isVectorish(x)) {
+		[ w, h ] = [ y, w ];
 		({ x, y } = x);
 	}
+	if(w === undefined) w = 1;
+	// if(h === undefined) h = Infinity;
 	return x + w * y;
 }
 
 function iToXY(i, w, h) {
-	return createVector(i % w, floor(i / w));
+	return new Vector(i % w, floor(i / w));
 }
-
 
 function random(low = 1, high = null) {
 	if(Array.isArray(low)) {
@@ -968,24 +1039,20 @@ function dist(x1, y1, x2, y2) {
 	return sqrt(d);
 }
 
-function cos(input, mult = null) {
-	let c = Math.cos(input % TAU);
-	if(mult === null) {
-		return c;
-	}
-	return c * mult;
+function cos(input, mult = 1, add = 0) {
+	return Math.cos(input % TAU) * mult;
 }
 
-function sin(input, mult = null) {
-	let s = Math.sin(input % TAU);
-	if(mult === null) {
-		return s;
-	}
-	return s * mult;
+function sin(input, mult = 1, add = 0) {
+	return Math.sin(input % TAU) * mult + add;
 }
 
-
+let _warning_createVector = false;
 function createVector(x, y, z) {
+	if(!_warning_createVector) {
+		_warning_createVector = true;
+		console.warn('[Alca Canvas Warning] Hey, stop using createVector');
+	}
 	return new Vector(x, y, z);
 }
 
@@ -1001,26 +1068,26 @@ class Vector {
 	}
 	
 	static center() {
-		return createVector(width_half, height_half);
+		return new Vector(width_half, height_half);
 	}
 	
 	static from(v, ...args) {
 		if(v === undefined) {
-			return createVector();
+			return new Vector();
 		}
 		else if(Array.isArray(v)) {
-			return createVector(...v);
+			return new Vector(...v);
 		}
 		else if(typeof v === 'object') {
-			return createVector(v.x, v.y, v.z);
+			return new Vector(v.x, v.y, v.z);
 		}
 		else if(typeof v === 'number') {
-			return createVector(v, ...args);
+			return new Vector(v, ...args);
 		}
 	}
 	
 	static fromAngle(angle, mult = 1) {
-		let v = createVector(cos(angle), sin(angle));
+		let v = new Vector(cos(angle), sin(angle));
 		if(mult !== 1) v.mult(mult);
 		return v;
 	}
@@ -1031,7 +1098,7 @@ class Vector {
 			v = Vector.fromAngle(random(TAU));
 		}
 		else {
-			v = createVector(random(-1, 1), random(-1, 1));
+			v = new Vector(random(-1, 1), random(-1, 1));
 		}
 		if(typeof angle === 'number') {
 			v.mult(angle);
@@ -1049,9 +1116,17 @@ class Vector {
 		if(apply) {
 			return start.set(x, y, z);
 		}
-		return createVector(x, y, z);
+		return new Vector(x, y, z);
 	}
 	
+	static average(vectors, ...rest) {
+		if(rest.length) {
+			vectors = [ vectors, ...rest ];
+		}
+		return vectors.reduce((p, n) => p.add(n), new Vector()).div(vectors.length);
+	}
+	
+	// Swizzlers
 	get xy() { return [ this.x, this.y ]; }
 	get yx() { return [ this.y, this.x ]; }
 	get xz() { return [ this.x, this.z ]; }
@@ -1071,7 +1146,7 @@ class Vector {
 	get xyzObject() { return { x: this.x, y: this.y, z: this.z }; }
 	
 	copy() {
-		return createVector(this.x, this.y, this.z);
+		return new Vector(this.x, this.y, this.z);
 	}
 	
 	get _() {
@@ -1160,7 +1235,14 @@ class Vector {
 		return this.setXZ(...args);
 	}
 
-	add(x = 0, y = x, z = 0) {
+	add(x = 0, y = undefined, z = undefined) {
+		if(y === undefined) {
+			y = x;
+			z = x;
+		}
+		else if(z === undefined) {
+			z = 0;
+		}
 		if(x instanceof Vector) {
 			this.x += x.x;
 			this.y += x.y;
@@ -1196,7 +1278,14 @@ class Vector {
 		this.z += n;
 		return this;
 	}
-	sub(x = 0, y = x, z = 0) {
+	sub(x = 0, y = undefined, z = undefined) {
+		if(y === undefined) {
+			y = x;
+			z = x;
+		}
+		else if(z === undefined) {
+			z = 0;
+		}
 		if(x instanceof Vector) {
 			this.x -= x.x;
 			this.y -= x.y;
@@ -1460,6 +1549,13 @@ class Vector {
 			return this.dot(x.x, x.y, x.z);
 		}
 		return this.x * x + this.y * y + this.z * z;
+	}
+	cross(v) {
+		return new Vector(
+			this.y * v.z - this.z * v.y,
+			this.z * v.x - this.x * v.z,
+			this.x * v.y - this.y * v.x
+		);
 	}
 	dist(x, y) {
 		if(x instanceof Vector) {
