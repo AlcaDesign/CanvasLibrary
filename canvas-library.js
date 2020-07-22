@@ -128,6 +128,7 @@ const _originalCtx = ctx;
 let _anim, _lastCanvasTime, canvasFrameRate, frameCount, width, height, width_half, height_half, width_quarter, height_quarter;
 let _canvasCurrentlyCentered = false;
 let _logMouseEvents = false;
+let _mouseUpdateTimeThreshold = 12;
 let mouseUpdate = -Infinity, mouseIn = false, mouseDown = false, mouseMove = null, mousePos = null, mousePosPrev = null;
 
 function updateMouse(e, eventName) { // Modified from p5.js
@@ -138,9 +139,22 @@ function updateMouse(e, eventName) { // Modified from p5.js
 		e = e.touches && e.touches.length ? e.touches[0] : (e.changedTouches ? e.changedTouches[0] : e);
 	}
 	if(!e) {
-		return 'Missing event data';
+		if(_logMouseEvents) {
+			console.log('Missing event data');
+		}
+		return;
 	}
-	mouseUpdate = e.timeStamp === undefined ? performance.now() : e.timeStamp;
+	const _mouseUpdate = e.timeStamp === undefined ? performance.now() : e.timeStamp;
+	if(mouseUpdate > 0 && _mouseUpdate - mouseUpdate < _mouseUpdateTimeThreshold) {
+		if(_logMouseEvents) {
+			// https://nolanlawson.com/2019/08/11/high-performance-input-handling-on-the-web/
+			// https://bugs.chromium.org/p/chromium/issues/detail?id=992954
+			// http://event-timing.glitch.me/
+			console.log('Skipping mouse event, are the dev tools open?');
+		}
+		return;
+	}
+	mouseUpdate = _mouseUpdate;
 	let rect = canvas.getBoundingClientRect();
 	let sx   = canvas.scrollWidth / width;
 	let sy   = canvas.scrollHeight / height;
@@ -223,8 +237,7 @@ function _draw(timestamp) {
 		_canvasOptions.centered && (_canvasCurrentlyCentered = true) && translateCenter();
 		_canvasOptions.autoCompensate && compensateCanvas();
 	}
-	document.body.style.background = 'black !important';
-	document.body.style.backgroundColor = 'black !important';
+	'draw' in window && window.draw(timestamp);
 	_canvasOptions.autoPushPop && pop();
 	_canvasCurrentlyCentered = false;
 	_lastCanvasTime = timestamp;
@@ -452,19 +465,38 @@ function clip() {
 	ctx.clip();
 }
 
-function createLinearGradient(x1 = -100, y1 = -100, x2 = 100, y2 = 100) {
+function createLinearGradient(x1 = -100, y1 = -100, x2 = 100, y2 = 100, stops = []) {
+	// Vector, Vector [stops]
 	if(typeof x1 !== 'number' && typeof y1 !== 'number') {
+		stops = x2;
 		({ x: x2, y: y2 } = y1);
 		({ x: x1, y: y1 } = x1);
 	}
+	// Vector, number, number, [stops]
 	else if(typeof x1 !== 'number' && typeof y1 === 'number' && typeof x2 === 'number') {
+		stops = y2;
 		[ x2, y2 ] = [ y1, x2 ];
 		({ x: x1, y: y1 } = x1);
 	}
+	// Number, number, Vector, [stops]
 	else if(typeof x1 === 'number' && typeof y1 === 'number' && typeof x2 !== 'number') {
+		stops = y2;
 		({ x: x2, y: y2 } = x2);
 	}
-	return ctx.createLinearGradient(x1, y1, x2, y2);
+	const grad = ctx.createLinearGradient(x1, y1, x2, y2);
+	if(stops && Array.isArray(stops) && stops.length) {
+		stops.forEach(stop => {
+			// offset: number, color: string
+			if(Array.isArray(stop)) {
+				grad.addColorStop(stop[0], stop[1]);
+			}
+			// { offset: number, color: string }
+			else if(stop.offset && stop.color) {
+				grad.addColorStop(stop.offset, stop.color);
+			}
+		});
+	}
+	return grad;
 }
 
 function createRadialGradient(x1 = 0, y1 = 0, r1 = 0, x2 = 0, y2 = 0, r2 = 200) {
@@ -890,6 +922,24 @@ function genRegularPolygon(sides = 3, radius = 50, rotation = 0) {
 	return data;
 }
 
+function getCodePenID() {
+	if(_codepenIDRegex.test(window.location.href)) {
+		return _codepenIDRegex.exec(window.location.href)[1];
+	}
+	else {
+		let metas = document.getElementsByTagName('link');
+		for(let i = 0; i < metas.length; i++) {
+			let m = metas[i];
+			if(m.getAttribute('rel') == 'canonical') {
+				let id = _codepenIDRegex.exec(m.getAttribute('href'));
+				if(id) {
+					return id[1];
+				}
+			}
+		}
+	}
+}
+
 function loadImage(url) {
 	return new Promise((resolve, reject) => {
 		let img = new Image();
@@ -957,6 +1007,13 @@ function xyToI(x, y, w, h) {
 
 function iToXY(i, w, h) {
 	return new Vector(i % w, floor(i / w));
+}
+
+function mapObject(obj, cb) {
+	return Object.entries(obj).reduce((p, [ key, value ]) => {
+		p[key] = cb(value, key);
+		return p;
+	}, {});
 }
 
 function random(low = 1, high = null) {
@@ -1088,7 +1145,7 @@ class Vector {
 	
 	static fromAngle(angle, mult = 1) {
 		let v = new Vector(cos(angle), sin(angle));
-		if(mult !== 1) v.mult(mult);
+		v.mult(mult);
 		return v;
 	}
 	
@@ -1152,6 +1209,31 @@ class Vector {
 	get _() {
 		return this.copy();
 	}
+	
+	swap(a, b) {
+		const temp = this[a];
+		this[a] = this[b];
+		this[b] = temp;
+		return this;
+	}
+	swapXY() { return this.swap('x', 'y'); }
+	swapYZ() { return this.swap('y', 'z'); }
+	swapZX() { return this.swap('z', 'x'); }
+	swapYX() { return this.swapXY(); }
+	swapZY() { return this.swapYZ(); }
+	swapXZ() { return this.swapZX(); }
+	
+	// Copy [a] to [b]
+	copyWithin(a, b) {
+		this[b] = a;
+		return this;
+	}
+	copyXY() { return this.copyWithin('x', 'y'); }
+	copyYX() { return this.copyWithin('y', 'x'); }
+	copyYZ() { return this.copyWithin('y', 'z'); }
+	copyZY() { return this.copyWithin('z', 'y'); }
+	copyZX() { return this.copyWithin('z', 'x'); }
+	copyXZ() { return this.copyWithin('x', 'z'); }
 	
 	equals(vec) {
 		return this.x === vec.x && this.y === vec.y;
@@ -1496,6 +1578,9 @@ class Vector {
 		this.x = v.y;
 		return this;
 	}
+	rotateYX(a) { return this.rotateXY(a); }
+	rotateZY(a) { return this.rotateYZ(a); }
+	rotateXZ(a) { return this.rotateZX(a); }
 	magSq() {
 		return this.x * this.x + this.y * this.y;
 	}
