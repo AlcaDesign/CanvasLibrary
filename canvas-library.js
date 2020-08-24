@@ -129,7 +129,7 @@ let _anim, _lastCanvasTime, canvasFrameRate, frameCount, width, height, width_ha
 let _canvasCurrentlyCentered = false;
 let _logMouseEvents = false;
 let _mouseUpdateTimeThreshold = 12;
-let mouseUpdate = -Infinity, mouseIn = false, mouseDown = false, mouseMove = null, mousePos = null, mousePosPrev = null;
+let mouseUpdate = -Infinity, mouseIn = false, mouseDown = false, mouseMove = null, mousePos = null, mousePosPrev = null, mouseDownTime = -Infinity, mouseDownPos = null;
 
 function updateMouse(e, eventName) { // Modified from p5.js
 	if(_logMouseEvents) {
@@ -196,18 +196,24 @@ function updateMouse(e, eventName) { // Modified from p5.js
 // }));
 
 canvas.addEventListener('mouseenter',  e => (updateMouse(e, 'mouseenter'), mouseIn = true));
-canvas.addEventListener('mouseleave',  e => (updateMouse(e, 'mouseleave'), mouseIn = false, mouseDown = false));
+canvas.addEventListener('mouseleave',  e => (updateMouse(e, 'mouseleave'), mouseIn = mouseDown = false));
 canvas.addEventListener('mousemove',   e => (updateMouse(e, 'mousemove'), mouseIn = true, mouseMove = e.timeStamp));
-canvas.addEventListener('mousedown',   e => (updateMouse(e, 'mousedown'), mouseIn = true, mouseDown = true));
+canvas.addEventListener('mousedown',   e => {
+	updateMouse(e, 'mousedown');
+	mouseIn = mouseDown = true;
+	mouseDownTime = e.timeStamp;
+	mouseDownPos = mousePos.copy();
+});
 canvas.addEventListener('mouseup',     e => (updateMouse(e, 'mouseup'), mouseDown = false));
 canvas.addEventListener('touchstart',  e => (updateMouse(e, 'touchstart'), mouseIn = true));
-canvas.addEventListener('touchend',    e => (updateMouse(e, 'touchend'), mouseIn = false, mouseDown = false));
-canvas.addEventListener('touchcancel', e => (updateMouse(e, 'touchcancel'), mouseIn = false, mouseDown = false));
+canvas.addEventListener('touchend',    e => (updateMouse(e, 'touchend'), mouseIn = mouseDown = false));
+canvas.addEventListener('touchcancel', e => (updateMouse(e, 'touchcancel'), mouseIn = mouseDown = false));
 canvas.addEventListener('touchmove',   e => (updateMouse(e, 'touchmove'), mouseIn = true));
 window.addEventListener('resize', _resizeCanvas);
 window.addEventListener('load', () => {
 	mousePos = new Vector();
 	mousePosPrev = new Vector();
+	mouseDownPos = new Vector();
 	Object.assign(
 		_canvasOptions,
 		_defaulCanvasOptions,
@@ -1144,9 +1150,7 @@ class Vector {
 	}
 	
 	static fromAngle(angle, mult = 1) {
-		let v = new Vector(cos(angle), sin(angle));
-		v.mult(mult);
-		return v;
+		return new Vector(cos(angle), sin(angle)).mult(mult);
 	}
 	
 	static random2D(angle = true, mult = 1) {
@@ -1167,9 +1171,13 @@ class Vector {
 	}
 	
 	static lerp(start, stop, amt = 0.5, apply = false) {
-		let x = start.x === stop.x ? start.x : lerp(start.x, stop.x, amt);
-		let y = start.y === stop.y ? start.y : lerp(start.y, stop.y, amt);
-		let z = start.z === undefined ? stop.z === undefined ? 0 : stop.z : start.z === stop.z ? start.z : lerp(start.z, stop.z, amt);
+		let amtX = amt;
+		let amtY = amt;
+		let amtZ = amt;
+		if(isVectorish(amt)) ({ x: amtX, y: amtY, z: amtZ } = amt);
+		const x = start.x === stop.x ? start.x : lerp(start.x, stop.x, amtX);
+		const y = start.y === stop.y ? start.y : lerp(start.y, stop.y, amtY);
+		const z = start.z === undefined ? (stop.z === undefined ? 0 : stop.z) : (start.z === stop.z ? start.z : lerp(start.z, stop.z, amtZ));
 		if(apply) {
 			return start.set(x, y, z);
 		}
