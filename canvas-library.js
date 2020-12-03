@@ -54,8 +54,8 @@ const TEN_BILLIONTH      = 1e-10;
 const HUNDRED_BILLIONTH  = 1e-11;
 
 const HALF_PI             = PI * HALF;
-const THIRD_PI            = PI * THIRD;
 const THREE_QUARTER_PI    = PI * THREE_QUARTER;
+const THIRD_PI            = PI * THIRD;
 const QUARTER_PI          = PI * QUARTER;
 const FIFTH_PI            = PI * FIFTH;
 const SIXTH_PI            = PI * SIXTH;
@@ -66,6 +66,7 @@ const SIXTEENTH_PI        = PI * SIXTEENTH;
 const THIRTY_SECONDTH_PI  = PI * THIRTY_SECONDTH;
 const TAU                 = PI * TWO;
 const TWO_TAU             = TAU * TWO;
+const THREE_QUARTER_TAU   = TAU * THREE_QUARTER;
 const HALF_TAU            = PI;
 const THIRD_TAU           = TAU * THIRD;
 const QUARTER_TAU         = HALF_PI;
@@ -129,7 +130,11 @@ let _anim, _lastCanvasTime, canvasFrameRate, frameCount, width, height, width_ha
 let _canvasCurrentlyCentered = false;
 let _logMouseEvents = false;
 let _mouseUpdateTimeThreshold = 12;
-let mouseUpdate = -Infinity, mouseIn = false, mouseDown = false, mouseMove = null, mousePos = null, mousePosPrev = null, mouseDownTime = -Infinity, mouseDownPos = null;
+let mouseUpdate = -Infinity, mouseIn = false, mouseDown = false, mouseButton = -1,
+	mouseMove = null, mousePos = null, mousePosPrev = null,
+	mouseDownTime = -Infinity, mouseDownPos = null,
+	mouseUpTime = -Infinity, mouseUpPos = null,
+	mouseEnterTime = -Infinity, mouseExitTime = -Infinity;
 
 function updateMouse(e, eventName) { // Modified from p5.js
 	if(_logMouseEvents) {
@@ -156,8 +161,8 @@ function updateMouse(e, eventName) { // Modified from p5.js
 	}
 	mouseUpdate = _mouseUpdate;
 	let rect = canvas.getBoundingClientRect();
-	let sx   = canvas.scrollWidth / width;
-	let sy   = canvas.scrollHeight / height;
+	let sx = canvas.scrollWidth / width;
+	let sy = canvas.scrollHeight / height;
 	let x = (e.clientX - rect.left) / sx;
 	let y = (e.clientY - rect.top) / sy;
 	if(x < 0) x = 0;
@@ -195,16 +200,37 @@ function updateMouse(e, eventName) { // Modified from p5.js
 // 	cb(e);
 // }));
 
-canvas.addEventListener('mouseenter',  e => (updateMouse(e, 'mouseenter'), mouseIn = true));
-canvas.addEventListener('mouseleave',  e => (updateMouse(e, 'mouseleave'), mouseIn = mouseDown = false));
-canvas.addEventListener('mousemove',   e => (updateMouse(e, 'mousemove'), mouseIn = true, mouseMove = e.timeStamp));
-canvas.addEventListener('mousedown',   e => {
+canvas.addEventListener('mouseenter', e => {
+	updateMouse(e, 'mouseenter');
+	mouseIn = true;
+	mouseEnterTime = e.timeStamp;
+	// mouseExitTime = -Infinity;
+});
+canvas.addEventListener('mouseleave', e => {
+	updateMouse(e, 'mouseleave');
+	mouseIn = mouseDown = false;
+	// mouseEnterTime = -Infinity;
+	mouseExitTime = e.timeStamp;
+});
+canvas.addEventListener('mousemove', e => {
+	updateMouse(e, 'mousemove');
+	mouseIn = true;
+	mouseMove = e.timeStamp;
+});
+canvas.addEventListener('mousedown', e => {
 	updateMouse(e, 'mousedown');
 	mouseIn = mouseDown = true;
+	mouseButton = e.button;
 	mouseDownTime = e.timeStamp;
 	mouseDownPos = mousePos.copy();
 });
-canvas.addEventListener('mouseup',     e => (updateMouse(e, 'mouseup'), mouseDown = false));
+canvas.addEventListener('mouseup', e => {
+	updateMouse(e, 'mouseup');
+	mouseDown = false;
+	mouseButton = e.button;
+	mouseUpTime = e.timeStamp;
+	mouseUpPos = mousePos.copy();
+});
 canvas.addEventListener('touchstart',  e => (updateMouse(e, 'touchstart'), mouseIn = true));
 canvas.addEventListener('touchend',    e => (updateMouse(e, 'touchend'), mouseIn = mouseDown = false));
 canvas.addEventListener('touchcancel', e => (updateMouse(e, 'touchcancel'), mouseIn = mouseDown = false));
@@ -213,7 +239,10 @@ window.addEventListener('resize', _resizeCanvas);
 window.addEventListener('load', () => {
 	mousePos = new Vector();
 	mousePosPrev = new Vector();
+	mouseUpPos = new Vector();
 	mouseDownPos = new Vector();
+	mouseEnterPos = new Vector();
+	mouseExitPos = new Vector();
 	Object.assign(
 		_canvasOptions,
 		_defaulCanvasOptions,
@@ -328,7 +357,7 @@ function miterLimit(value = 10) {
 
 function strokeStyle(...args) {
 	if(args.length === 1) {
-		let a = args[0];
+		let [ a ] = args;
 		if(typeof a === 'string' || a instanceof CanvasGradient) {
 			ctx.strokeStyle = a;
 		}
@@ -450,25 +479,40 @@ function rgb(r = 255, g = 255, b = 255, a = 1) {
 	if(typeof r !== 'number' && 'r' in r) {
 		({ r = 255, g = 255, b = 255, a = 1 } = r);
 	}
+	else if(isVectorish(r)) {
+		({ x: r = 255, y: g = 255, z: b = 255, a = 1 } = r);
+	}
 	return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
 function fill(...args) {
+	let path;
 	if(args.length) {
+		if(args[0] instanceof Path2D) {
+			path = args.shift();
+		}
 		fillStyle(...args);
 	}
-	ctx.fill();
+	// Must branch the fill/stroke call as it
+	// recognizes the undefined argument
+	path ? ctx.fill(path) : ctx.fill();
 }
 
 function stroke(...args) {
+	let path;
 	if(args.length) {
+		if(args[0] instanceof Path2D) {
+			path = args.shift();
+		}
 		strokeStyle(...args);
 	}
-	ctx.stroke();
+	// Must branch the fill/stroke call as it
+	// recognizes the undefined argument
+	path ? ctx.stroke(path) : ctx.stroke();
 }
 
-function clip() {
-	ctx.clip();
+function clip(...args) {
+	ctx.clip(...args);
 }
 
 function createLinearGradient(x1 = -100, y1 = -100, x2 = 100, y2 = 100, stops = []) {
@@ -783,8 +827,13 @@ function line(x = 0, y = 0, x_ = 0, y_ = 0) {
 }
 
 function vertices(...verts) {
+	let shouldMoveFirst = false;
 	if(verts.length === 0) return;
 	else if(verts.length === 1 && Array.isArray(verts[0])) {
+		verts = verts[0];
+	}
+	else if(verts.length === 2 && Array.isArray(verts[0]) && typeof verts[1] === 'boolean') {
+		shouldMoveFirst = verts[1];
 		verts = verts[0];
 	}
 	for(let i = 0; i < verts.length; i++) {
@@ -797,12 +846,13 @@ function vertices(...verts) {
 		else if(isVectorish(n)) {
 			({ x, y } = n);
 		}
-		lineTo(x, y);
+		if(!shouldMoveFirst || i !== 0) {
+			lineTo(x, y);
+		}
+		else {
+			moveTo(x, y);
+		}
 	}
-}
-
-function arcTo(x1 = 0, y1 = 0, x2 = 0, y2 = 0, radius = 50) {
-	ctx.arcTo(x1, y1, x2, y2, radius);
 }
 
 function rect(x, y, w, h, r) {
@@ -810,6 +860,10 @@ function rect(x, y, w, h, r) {
 		// Shift args down 1
 		[ w, h, r ] = [ y, w, h ];
 		({ x, y } = x);
+	}
+	if(isVectorish(w)) {
+		r = h;
+		({ x: w, y: h } = w);
 	}
 	// x = 0, y = 0, w = 10, h = w, r = 0
 	x = x ?? 0;
@@ -845,6 +899,10 @@ function arc(x, y, radius, startAngle, endAngle, anticlockwise) {
 	anticlockwise = anticlockwise ?? false;
 	if(radius < 0) radius = 0;
 	ctx.arc(x, y, radius, startAngle, endAngle, anticlockwise);
+}
+
+function arcTo(x1 = 0, y1 = 0, x2 = 0, y2 = 0, radius = 50) {
+	ctx.arcTo(x1, y1, x2, y2, radius);
 }
 
 // function circle(x = 0, y = undefined, rX = 20, rY = undefined) {
@@ -926,24 +984,6 @@ function genRegularPolygon(sides = 3, radius = 50, rotation = 0) {
 		data.points.push(point);
 	}
 	return data;
-}
-
-function getCodePenID() {
-	if(_codepenIDRegex.test(window.location.href)) {
-		return _codepenIDRegex.exec(window.location.href)[1];
-	}
-	else {
-		let metas = document.getElementsByTagName('link');
-		for(let i = 0; i < metas.length; i++) {
-			let m = metas[i];
-			if(m.getAttribute('rel') == 'canonical') {
-				let id = _codepenIDRegex.exec(m.getAttribute('href'));
-				if(id) {
-					return id[1];
-				}
-			}
-		}
-	}
 }
 
 function loadImage(url) {
@@ -1152,6 +1192,9 @@ class Vector {
 	static fromAngle(angle, mult = 1) {
 		return new Vector(cos(angle), sin(angle)).mult(mult);
 	}
+	static fa(...args) {
+		return Vector.fromAngle(...args);
+	}
 	
 	static random2D(angle = true, mult = 1) {
 		let v;
@@ -1301,6 +1344,9 @@ class Vector {
 		this.y = y;
 		return this;
 	}
+	setYX(...args) {
+		return this.setXY(...args);
+	}
 	setYZ(y = this.y, z = this.z) {
 		if(y instanceof Vector) {
 			this.y = y.y;
@@ -1310,6 +1356,9 @@ class Vector {
 		this.y = y;
 		this.z = z;
 		return this;
+	}
+	setZY(...args) {
+		return this.setYZ(...args);
 	}
 	setXZ(x = this.x, z = this.y) {
 		if(x instanceof Vector) {
@@ -1368,6 +1417,27 @@ class Vector {
 		this.z += n;
 		return this;
 	}
+	addXY(x, y = x) {
+		return this.addX(x).addY(y);
+	}
+	addYX(y, x = y) {
+		return this.addXY(x, y);
+	}
+	addYZ(y, z = y) {
+		return this.addY(y).addZ(z);
+	}
+	addZY(z, y = z) {
+		return this.addYZ(y, z);
+	}
+	addZX(z, x = z) {
+		return this.addZ(z).addX(x);
+	}
+	addXZ(x, z = x) {
+		return this.addZX(x, z);
+	}
+	addXYZ(...args) {
+		return this.add(...args);
+	}
 	sub(x = 0, y = undefined, z = undefined) {
 		if(y === undefined) {
 			y = x;
@@ -1411,6 +1481,27 @@ class Vector {
 		this.z -= n;
 		return this;
 	}
+	subXY(x, y = x) {
+		return this.subX(x).subY(y);
+	}
+	subYX(y, x = y) {
+		return this.subXY(x, y);
+	}
+	subYZ(y, z = y) {
+		return this.subY(y).subZ(z);
+	}
+	subZY(z, y = z) {
+		return this.subYZ(y, z);
+	}
+	subZX(z, x = z) {
+		return this.subZ(z).subX(x);
+	}
+	subXZ(x, z = x) {
+		return this.subZX(x, z);
+	}
+	subXYZ(...args) {
+		return this.sub(...args);
+	}
 	mult(x = 1, y = x, z = x) {
 		if(x instanceof Vector) {
 			this.x *= x.x;
@@ -1447,6 +1538,27 @@ class Vector {
 		this.z *= n;
 		return this;
 	}
+	multXY(x, y = x) {
+		return this.multX(x).multY(y);
+	}
+	multYX(y, x = y) {
+		return this.multXY(x, y);
+	}
+	multYZ(y, z = y) {
+		return this.multY(y).multZ(z);
+	}
+	multZY(z, y = z) {
+		return this.multYZ(y, z);
+	}
+	multZX(z, x = z) {
+		return this.multZ(z).multX(x);
+	}
+	multXZ(x, z = x) {
+		return this.multZX(x, z);
+	}
+	multXYZ(...args) {
+		return this.mult(...args);
+	}
 	div(x = 1, y = x, z = x) {
 		if(x instanceof Vector) {
 			this.x /= x.x;
@@ -1482,6 +1594,27 @@ class Vector {
 		}
 		this.z /= n;
 		return this;
+	}
+	divXY(x, y = x) {
+		return this.divX(x).divY(y);
+	}
+	divYX(y, x = y) {
+		return this.divXY(x, y);
+	}
+	divYZ(y, z = y) {
+		return this.divY(y).divZ(z);
+	}
+	divZY(z, y = z) {
+		return this.divYZ(y, z);
+	}
+	divZX(z, x = z) {
+		return this.divZ(z).divX(x);
+	}
+	divXZ(x, z = x) {
+		return this.divZX(x, z);
+	}
+	divXYZ(...args) {
+		return this.div(...args);
 	}
 	
 	mod(x, y, z) {
@@ -1664,6 +1797,39 @@ class Vector {
 	}
 	lerp(stop, amt) {
 		return Vector.lerp(this, stop, amt, true);
+	}
+	_lerpPart(stop, amt, part) {
+		stop = isVectorish(stop) ? stop[part] : stop;
+		amt = isVectorish(amt) ? amt[part] : amt;
+		this[part] = lerp(this[part], stop, amt);
+		return this;
+	}
+	lerpX(stop, amt) {
+		return this._lerpPart(stop, amt, 'x');
+	}
+	lerpY(stop, amt) {
+		return this._lerpPart(stop, amt, 'y');
+	}
+	lerpZ(stop, amt) {
+		return this._lerpPart(stop, amt, 'z');
+	}
+	lerpXY(stop, amt) {
+		return this.lerpX(stop, amt).lerpY(stop, amt);
+	}
+	lerpYX(stop, amt) {
+		return this.lerpXY(stop, amt);
+	}
+	lerpYZ(stop, amt) {
+		return this.lerpY(stop, amt).lerpZ(stop, amt);
+	}
+	lerpZY(stop, amt) {
+		return this.lerpYZ(stop, amt);
+	}
+	lerpZX(stop, amt) {
+		return this.lerpZ(stop, amt).lerpX(stop, amt);
+	}
+	lerpXZ(stop, amt) {
+		return this.lerpZX(stop, amt);
 	}
 	round() {
 		this.x = round(this.x);
